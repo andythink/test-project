@@ -12,28 +12,35 @@ var pathMap = config['path']
 ;(typeof pathMap === 'undefined') && (pathMap = {})
 
 var indexMap = {},
-    serveMap = {}
+    serveMap = {},
+    pathRegExpMap = {}
 
+//初始化index、static
 for(var tempPath in pathMap) {
-    // Serve directory indexes for public/ftp folder (with icons)
     indexMap[tempPath] = serveIndex(pathMap[tempPath], {"icons": true, "hidden": false, "view": "details"})
      
-    // Serve up public/ftp folder files 
     serveMap[tempPath] = serveStatic(pathMap[tempPath])
-    
+
+    if(tempPath[tempPath.length - 1] !== '/') {
+        pathRegExpMap[tempPath] = new RegExp('^' + tempPath + '/')
+    } else {
+        pathRegExpMap[tempPath] = new RegExp('^' + tempPath)
+    }
+
 }
 
 var homeDir = ''
 if(pathMap['/'] === undefined) {
-    // Serve directory indexes for public/ftp folder (with icons) 
-    indexMap['/'] = serveIndex('./', {"icons": true, "hidden": false, "view": "details"})
+    var tempRoot = process.cwd()
+    indexMap['/'] = serveIndex(tempRoot, {"icons": true, "hidden": false, "view": "details"})
      
-    // Serve up public/ftp folder files 
-    serveMap['/'] = serveStatic('./')
+    serveMap['/'] = serveStatic(tempRoot)
 
-    pathMap['/'] = './'
+    pathRegExpMap['/'] = new RegExp('^/')
 
-    homeDir = process.cwd()
+    pathMap['/'] = tempRoot
+
+    homeDir = tempRoot
 } else {
     homeDir = pathMap['/']
 }
@@ -125,11 +132,28 @@ var server = http.createServer(function onRequest(req, res){
 
 
 })
-function serveIndexRespone(req, res, path) {
+function serveIndexRespone(req, res, prefixPath) {
     var done = finalhandler(req, res)
-    serveMap[path](req, res, function onNext(err) {
+    // 将req.url规范化 目录的路径最后都有"/"
+    var lastPart = req.url.split('/').pop()
+    if(lastPart.length > 0) {
+        if(lastPart.split('.').length === 1) {
+            req.url = req.url + '/'
+        }
+    }
+
+    //修改req.url 在serve-static serve-index用作调整相对于跟
+    req.url =  '/' + req.url.replace(pathRegExpMap[prefixPath], '')
+    // 用与serve-index文件的超链接路径调整
+    if(prefixPath === '/') {
+        req.prefixPath = ''
+    } else {
+        req.prefixPath = prefixPath
+    }
+
+    serveMap[prefixPath](req, res, function onNext(err) {
         if (err) return done(err)
-        indexMap[path](req, res, done)
+        indexMap[prefixPath](req, res, done)
     })
 }
  
